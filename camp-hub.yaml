@@ -56,9 +56,8 @@ ble_client:
 external_components:
   - source: github://syssi/esphome-jk-bms@main
     refresh: 0s
-  - source:
-      type: local
-      path: ../esphome-alpicool/components
+  - source: github://neftaly/esphome-alpicool@main
+    refresh: 0s
 
 jk_bms_ble:
   - ble_client_id: ble_bms

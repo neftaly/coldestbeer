@@ -172,25 +172,24 @@ sensor:
     state_class: measurement
     accuracy_decimals: 2
 
-  # TODO: uncomment when Alpicool component is ready
-  # - platform: packet_transport
-  #   provider: campsite-node
-  #   remote_id: fridge_temp
-  #   name: "Fridge Temperature"
-  #   id: fridge_temp
-  #   unit_of_measurement: "C"
-  #   device_class: temperature
-  #   state_class: measurement
-  #   accuracy_decimals: 0
-  #
-  # - platform: packet_transport
-  #   provider: campsite-node
-  #   remote_id: fridge_target_temp
-  #   name: "Fridge Target Temperature"
-  #   id: fridge_target_temp
-  #   unit_of_measurement: "C"
-  #   device_class: temperature
-  #   accuracy_decimals: 0
+  - platform: packet_transport
+    provider: campsite-node
+    remote_id: fridge_temp
+    name: "Fridge Temperature"
+    id: fridge_temp
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: packet_transport
+    provider: campsite-node
+    remote_id: fridge_target_temp
+    name: "Fridge Target"
+    id: fridge_target_temp
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 0
 
   # Local gateway sensors
   - platform: adc
@@ -241,12 +240,11 @@ binary_sensor:
     name: "Batt 2 Discharging"
     id: bms2_discharging
 
-  # TODO: uncomment when Alpicool component is ready
-  # - platform: packet_transport
-  #   provider: campsite-node
-  #   remote_id: fridge_power
-  #   name: "Fridge Power"
-  #   device_class: power
+  - platform: packet_transport
+    provider: campsite-node
+    remote_id: fridge_powered_on
+    name: "Fridge Powered On"
+    device_class: power
 
 # --- OLED Display ---
 font:
@@ -281,8 +279,13 @@ display:
         it.printf(0, 16, id(font_small), "B2: waiting...");
       }
 
-      // --- Fridge (placeholder) ---
-      it.printf(0, 34, id(font_small), "Fridge: TODO");
+      // --- Fridge ---
+      if (id(fridge_temp).has_state()) {
+        it.printf(0, 34, id(font_medium), "Fridge: %.0fC -> %.0fC",
+                  id(fridge_temp).state, id(fridge_target_temp).state);
+      } else {
+        it.printf(0, 34, id(font_small), "Fridge: waiting...");
+      }
 
       // --- Remote TTGO battery ---
       if (id(remote_ttgo_battery).has_state()) {

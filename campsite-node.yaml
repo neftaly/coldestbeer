@@ -1,7 +1,7 @@
 # ============================================================
 # CAMPSITE NODE - TTGO LoRa32 v2.1 (SX1276, 915MHz)
 #
-# BLE sensors: 2x JK-BMS + Alpicool fridge (TODO)
+# BLE sensors: 2x JK-BMS + Alpicool fridge
 # Display: SSD1306 128x64 OLED
 # Transport: LoRa TX via packet_transport
 # No WiFi - standalone LoRa-only node
@@ -52,13 +52,14 @@ ble_client:
     id: ble_bms1
   - mac_address: !secret bms2_mac_address
     id: ble_bms2
-  # Alpicool fridge - TODO: uncomment when component is ready
-  # - mac_address: !secret fridge_mac_address
-  #   id: ble_fridge
+  - mac_address: !secret fridge_mac_address
+    id: ble_fridge
 
-# --- JK-BMS external component ---
+# --- External components ---
 external_components:
   - source: github://syssi/esphome-jk-bms@main
+    refresh: 0s
+  - source: github://neftaly/esphome-alpicool@main
     refresh: 0s
 
 jk_bms_ble:
@@ -70,6 +71,11 @@ jk_bms_ble:
     protocol_version: JK02_32S
     throttle: 5s
     id: bms2
+
+alpicool_ble:
+  - ble_client_id: ble_fridge
+    throttle: 10s
+    id: fridge
 
 # --- LoRa Radio ---
 sx127x:
@@ -104,15 +110,14 @@ packet_transport:
     - bms2_current
     - bms2_power
     - ttgo_battery_voltage
-    # TODO: uncomment when Alpicool component is ready
-    # - fridge_temp
-    # - fridge_target_temp
+    - fridge_temp
+    - fridge_target_temp
   binary_sensors:
     - bms1_charging
     - bms1_discharging
     - bms2_charging
     - bms2_discharging
-    # - fridge_power
+    - fridge_powered_on
 
 # --- Sensors ---
 sensor:
@@ -129,6 +134,16 @@ sensor:
       - sliding_window_moving_average:
           window_size: 5
           send_every: 5
+
+  # --- Fridge sensors ---
+  - platform: alpicool_ble
+    alpicool_ble_id: fridge
+    current_temperature:
+      name: "Fridge Temperature"
+      id: fridge_temp
+    target_temperature:
+      name: "Fridge Target"
+      id: fridge_target_temp
 
   # --- BMS 1 sensors ---
   - platform: jk_bms_ble
@@ -202,6 +217,12 @@ sensor:
 
 # --- Binary Sensors ---
 binary_sensor:
+  - platform: alpicool_ble
+    alpicool_ble_id: fridge
+    powered_on:
+      name: "Fridge Powered On"
+      id: fridge_powered_on
+
   - platform: jk_bms_ble
     jk_bms_ble_id: bms1
     charging:
@@ -303,13 +324,13 @@ display:
         it.printf(0, 16, id(font_medium), "B2: offline");
       }
 
-      // --- Fridge (placeholder) ---
-      it.printf(0, 34, id(font_small), "Fridge: TODO");
-      // TODO: uncomment when Alpicool is ready
-      // if (id(fridge_temp).has_state()) {
-      //   it.printf(0, 34, id(font_medium), "Fridge: %.0fC -> %.0fC",
-      //             id(fridge_temp).state, id(fridge_target_temp).state);
-      // }
+      // --- Fridge ---
+      if (id(fridge_temp).has_state()) {
+        it.printf(0, 34, id(font_medium), "Fridge: %.0fC -> %.0fC",
+                  id(fridge_temp).state, id(fridge_target_temp).state);
+      } else {
+        it.printf(0, 34, id(font_small), "Fridge: waiting...");
+      }
 
       // --- TTGO battery ---
       if (id(ttgo_battery_voltage).has_state()) {
