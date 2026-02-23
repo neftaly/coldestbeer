@@ -56,6 +56,39 @@ describe("Tui", () => {
     expect(overlay!.getAttribute("style")).toContain("width:");
   });
 
+  it("slider calls onChange on pointer drag", () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <Tui cols={30}>
+        <Box border title="Fridge">
+          <Slider value={0} min={-20} max={20} unit="°" onChange={onChange} />
+        </Box>
+      </Tui>,
+    );
+
+    const overlay = container.querySelector(".tui-overlay--thumb") as HTMLElement;
+    // jsdom lacks pointer capture APIs — stub them
+    overlay.setPointerCapture = vi.fn();
+    overlay.hasPointerCapture = vi.fn(() => true);
+
+    // Mock getBoundingClientRect for consistent positioning
+    overlay.getBoundingClientRect = () => ({
+      left: 0, right: 200, top: 0, bottom: 20, width: 200, height: 20, x: 0, y: 0, toJSON() {},
+    });
+
+    // Simulate pointerdown at midpoint (x=100 → ratio 0.5 → value 0)
+    fireEvent.pointerDown(overlay, { clientX: 100, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledWith(0);
+
+    // Simulate drag to 75% (x=150 → ratio 0.75 → value 10)
+    fireEvent.pointerMove(overlay, { clientX: 150, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledWith(10);
+
+    // Drag to left edge (x=0 → ratio 0 → value -20)
+    fireEvent.pointerMove(overlay, { clientX: 0, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledWith(-20);
+  });
+
   it("renders radio overlays with click handlers", () => {
     const onChange = vi.fn();
     const { container } = render(
@@ -77,7 +110,7 @@ describe("Tui", () => {
   it("renders top-level text (statusbar style)", () => {
     const { container } = render(
       <Tui cols={30}>
-        <Text left="Camp Hub" leftColor="accent" right="● BLE" rightColor="label" />
+        <Text left="Camp Hub" leftColor="accent" right="● WiFi" rightColor="label" />
       </Tui>,
     );
 

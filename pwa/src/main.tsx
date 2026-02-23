@@ -1,23 +1,20 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { ConnectDialog } from "./components/ConnectDialog";
 import { useStore } from "./store";
 import "./global.css";
 
-function Root() {
-  const connected = useStore((s) => s.connected);
-  const connect = useStore((s) => s.connect);
+// Auto-connect — same-origin, no user action needed
+useStore.getState().connect();
 
-  if (!connected) {
-    return <ConnectDialog onConnect={connect} />;
-  }
+// Take over ESPHome's default page
+const root = document.createElement("div");
+root.id = "root";
+document.body.textContent = "";
+document.body.appendChild(root);
 
-  return <App />;
-}
-
-createRoot(document.getElementById("root")!).render(
+createRoot(root).render(
   <StrictMode>
-    <Root />
+    <App />
   </StrictMode>,
 );

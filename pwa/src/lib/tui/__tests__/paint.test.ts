@@ -128,14 +128,14 @@ describe("paint", () => {
 
   it("paints a top-level text (statusbar style)", () => {
     const nodes = buildTree([
-      createElement(Text, { left: "Camp Hub", leftColor: "accent", right: "● BLE", rightColor: "label" }),
+      createElement(Text, { left: "Camp Hub", leftColor: "accent", right: "● WiFi", rightColor: "label" }),
     ]);
     const layouts = computeLayout(yoga, nodes, 20);
     const grid = new Grid(20, 1);
     paint(grid, layouts);
     const result = grid.toString();
 
-    expect(result).toMatch(/^Camp Hub.*● BLE$/);
+    expect(result).toMatch(/^Camp Hub.*● WiFi$/);
     expect(result).toHaveLength(20);
   });
 

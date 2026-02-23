@@ -24,6 +24,7 @@ esphome:
 esp32:
   board: esp32-c6-devkitc-1
   variant: esp32c6
+  partitions: partitions.csv
   framework:
     type: esp-idf
 
@@ -44,6 +45,11 @@ api:
     key: !secret api_encryption_key
 
 web_server:
+  js_include: "./pwa/dist/bundle.js"
+  css_include: "./pwa/dist/bundle.css"
+  js_url: ""
+  css_url: ""
+  compression: gzip
 
 ota:
   - platform: esphome
@@ -61,12 +67,9 @@ ble_client:
     id: ble_fridge
 
 # --- BLE server (GATT for phone PWA) ---
-esp32_ble:
-  server:
-    manufacturer: "Camp Hub"
-    model: "ESP32-C6"
-
 esp32_ble_server:
+  manufacturer: "Camp Hub"
+  model: "ESP32-C6"
   services:
     # Battery service
     - uuid: "c4400000-ca6d-4860-ab60-e3a84b000000"
@@ -75,60 +78,70 @@ esp32_ble_server:
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000001"
           id: ble_batt_soc
           value:
+            data: "0"
             type: float
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000002"
           id: ble_batt_voltage
           value:
+            data: "0"
             type: float
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000003"
           id: ble_batt_current
           value:
+            data: "0"
             type: float
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000004"
           id: ble_batt_power
           value:
+            data: "0"
             type: float
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000005"
           id: ble_batt_temp1
           value:
+            data: "0"
             type: float
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000006"
           id: ble_batt_temp2
           value:
+            data: "0"
             type: float
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000007"
           id: ble_batt_charging
           value:
+            data: "0"
             type: uint8_t
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000008"
           id: ble_batt_discharging
           value:
+            data: "0"
             type: uint8_t
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000009"
           id: ble_batt_online
           value:
+            data: "0"
             type: uint8_t
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b00000a"
           id: ble_bms_enable_charging
           value:
+            data: "0"
             type: uint8_t
           read: true
           write: true
@@ -146,6 +159,7 @@ esp32_ble_server:
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b00000b"
           id: ble_bms_enable_discharging
           value:
+            data: "0"
             type: uint8_t
           read: true
           write: true
@@ -167,24 +181,28 @@ esp32_ble_server:
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000101"
           id: ble_fridge_temp
           value:
+            data: "0"
             type: float
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000102"
           id: ble_fridge_target
           value:
+            data: "0"
             type: float
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000103"
           id: ble_fridge_powered_on
           value:
+            data: "0"
             type: uint8_t
           read: true
           notify: true
         - uuid: "c4400000-ca6d-4860-ab60-e3a84b000104"
           id: ble_fridge_power
           value:
+            data: "0"
             type: uint8_t
           read: true
           write: true
@@ -216,7 +234,7 @@ jk_bms_ble:
 alpicool_ble:
   - ble_client_id: ble_fridge
     throttle: 10s
-    id: fridge
+    id: fridge_ble
 
 # --- Sensors ---
 sensor:
@@ -266,7 +284,7 @@ sensor:
       device_id: battery
 
   - platform: alpicool_ble
-    alpicool_ble_id: fridge
+    alpicool_ble_id: fridge_ble
     current_temperature:
       name: "Fridge Temperature"
       id: sens_fridge_temp
@@ -306,7 +324,7 @@ binary_sensor:
       device_id: battery
 
   - platform: alpicool_ble
-    alpicool_ble_id: fridge
+    alpicool_ble_id: fridge_ble
     powered_on:
       name: "Fridge Powered On"
       id: sens_fridge_powered_on
@@ -317,13 +335,13 @@ binary_sensor:
 
 climate:
   - platform: alpicool_ble
-    alpicool_ble_id: fridge
+    alpicool_ble_id: fridge_ble
     name: "Fridge"
     device_id: fridge
 
 select:
   - platform: alpicool_ble
-    alpicool_ble_id: fridge
+    alpicool_ble_id: fridge_ble
     run_mode:
       name: "Fridge Run Mode"
       device_id: fridge
@@ -347,7 +365,7 @@ switch:
       device_id: battery
 
   - platform: alpicool_ble
-    alpicool_ble_id: fridge
+    alpicool_ble_id: fridge_ble
     power:
       name: "Fridge Power"
       id: sw_fridge_power

@@ -30,14 +30,14 @@ describe("buildTree", () => {
   });
 
   it("extracts a top-level Text (statusbar style)", () => {
-    const el = createElement(Text, { left: "Camp Hub", leftColor: "accent", right: "● BLE", rightColor: "label" });
+    const el = createElement(Text, { left: "Camp Hub", leftColor: "accent", right: "● WiFi", rightColor: "label" });
     const nodes = buildTree([el]);
     expect(nodes).toHaveLength(1);
     expect(nodes[0]).toMatchObject({
       type: "text",
       left: "Camp Hub",
       leftColor: "accent",
-      right: "● BLE",
+      right: "● WiFi",
       rightColor: "label",
     });
   });
@@ -114,7 +114,7 @@ describe("computeLayout", () => {
 
   it("lays out top-level text (statusbar) with height 2 (line + gap)", () => {
     const nodes = buildTree([
-      createElement(Text, { left: "Camp Hub", right: "● BLE" }),
+      createElement(Text, { left: "Camp Hub", right: "● WiFi" }),
     ]);
     const layouts = computeLayout(yoga, nodes, 20);
     expect(layouts).toHaveLength(1);

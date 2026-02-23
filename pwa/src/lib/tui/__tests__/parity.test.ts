@@ -126,7 +126,7 @@ describe("parity: Fridge panel", () => {
       originalTopBorder(COLS, title, headerValue),
       originalSliderLine(COLS, null, -20, 20, "°"),
       originalRadioLine(COLS, "Mode", ["Max", "Eco"], "Eco"),
-      originalRadioLine(COLS, "Cutoff", ["Hi", "Mid", "Low"], "Hi"),
+      originalRadioLine(COLS, "Cutoff", ["High", "Mid", "Low"], "High"),
       originalBottomBorder(COLS),
     ].join("\n");
 
@@ -137,7 +137,7 @@ describe("parity: Fridge panel", () => {
           { border: true, title, headerValue },
           createElement(Slider, { value: null, min: -20, max: 20, unit: "°", onChange: () => {} }),
           createElement(Radio, { label: "Mode", options: ["Max", "Eco"], value: "Eco", onChange: () => {} }),
-          createElement(Radio, { label: "Cutoff", options: ["Hi", "Mid", "Low"], value: "Hi", onChange: () => {} }),
+          createElement(Radio, { label: "Cutoff", options: ["High", "Mid", "Low"], value: "High", onChange: () => {} }),
         ),
       ],
       COLS,
@@ -179,10 +179,10 @@ describe("parity: slider at various positions", () => {
 describe("parity: StatusBar", () => {
   it("matches original layout", () => {
     const COLS = 30;
-    const expected = originalStatusBar(COLS, "Camp Hub", "●", " BLE");
+    const expected = originalStatusBar(COLS, "Camp Hub", "●", " WiFi");
 
     const nodes = buildTree([
-      createElement(Text, { left: "Camp Hub", leftColor: "accent", rightPrefix: "●", rightPrefixColor: "red", right: " BLE", rightColor: "label" }),
+      createElement(Text, { left: "Camp Hub", leftColor: "accent", rightPrefix: "●", rightPrefixColor: "red", right: " WiFi", rightColor: "label" }),
     ]);
     const layouts = computeLayout(yoga, nodes, COLS);
     const grid = new Grid(COLS, 1);
@@ -406,7 +406,7 @@ describe("parity: color classes", () => {
       createElement(Text, {
         left: "Camp Hub", leftColor: "accent",
         rightPrefix: "●", rightPrefixColor: "red",
-        right: " BLE", rightColor: "label",
+        right: " WiFi", rightColor: "label",
       }),
     ]);
     const layouts = computeLayout(yoga, nodes, COLS);
@@ -421,6 +421,6 @@ describe("parity: color classes", () => {
     }
     expect(dotCol).toBeGreaterThan(0);
     expect(grid.get(dotCol, 0).color).toBe("red");
-    expect(grid.get(dotCol + 1, 0).color).toBe("label"); // " " of " BLE"
+    expect(grid.get(dotCol + 1, 0).color).toBe("label"); // " " of " WiFi"
   });
 });

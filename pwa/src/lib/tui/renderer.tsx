@@ -1,5 +1,4 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { useDrag } from "@use-gesture/react";
 import Yoga from "yoga-layout";
 import { Grid } from "./grid";
 import { computeLayout, computeOverlays } from "./layout";
@@ -189,23 +188,37 @@ function SliderOverlayElement({ overlay }: { overlay: SliderOverlay }) {
     [overlay.min, overlay.max],
   );
 
-  const bind = useDrag(
-    ({ xy: [x] }) => {
-      overlay.onChange(getValueFromX(x));
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      const el = overlayRef.current;
+      if (!el) return;
+      el.setPointerCapture(e.pointerId);
+      overlay.onChange(getValueFromX(e.clientX));
     },
-    { pointer: { touch: true } },
+    [getValueFromX, overlay],
+  );
+
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId))
+        return;
+      overlay.onChange(getValueFromX(e.clientX));
+    },
+    [getValueFromX, overlay],
   );
 
   return (
     <div
       ref={overlayRef}
-      {...bind()}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
       className="tui-overlay tui-overlay--thumb"
       style={{
         top: `${overlay.top}em`,
         left: `${overlay.left}ch`,
         width: `${overlay.width}ch`,
         cursor: "grab",
+        touchAction: "none",
       }}
     />
   );
