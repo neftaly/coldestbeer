@@ -1,28 +1,32 @@
 # ============================================================
-# CAMP HUB - ESP32-C6
+# COLDEST BEER - ESP32-C6
 #
-# BLE sensors: 1x JK-BMS + Alpicool fridge
-# WiFi connected to HA + local web dashboard
-# BLE GATT server for phone PWA dashboard
+# BLE client: JK-BMS (x2) + Alpicool fridge
+# Zigbee: HA (via ZHA, router/repeater)
 # ============================================================
 
 substitutions:
-  name: camp-hub
-  friendly_name: "Camp Hub"
+  name: coldestbeer
+  friendly_name: "Coldest Beer"
   bms_name: "Battery"
+  bms2_name: "Battery 2"
 
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
   min_version: "2025.7.0"
-  devices:
-    - id: battery
-      name: "${bms_name}"
-    - id: fridge
-      name: "Fridge"
+  on_boot:
+    priority: 600
+    then:
+      - lambda: |-
+          // FM8625H RF switch: GPIO3 LOW = power on, GPIO14 HIGH = external antenna
+          gpio_set_direction(GPIO_NUM_3, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_3, 0);
+          gpio_set_direction(GPIO_NUM_14, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_14, 1);  // 0 = internal (PCB), 1 = external (U.FL)
 
 esp32:
-  board: esp32-c6-devkitc-1
+  board: seeed_xiao_esp32c6
   variant: esp32c6
   partitions: partitions.csv
   framework:
@@ -31,195 +35,178 @@ esp32:
 logger:
   level: DEBUG
 
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-  ap:
-    ssid: "${name}-fallback"
-    password: "esphome123"
+zigbee:
+  id: zb
+  router: true
+  components: all
+  debug: false
 
-captive_portal:
+globals:
+  - id: full_update_minutes
+    type: int
+    initial_value: '30'
+  - id: minutes_counter
+    type: int
+    initial_value: '0'
 
-api:
-  encryption:
-    key: !secret api_encryption_key
 
-web_server:
-  js_include: "./pwa/dist/bundle.js"
-  css_include: "./pwa/dist/bundle.css"
-  js_url: ""
-  css_url: ""
-  compression: gzip
+# --- SPI + E-Paper display ---
+spi:
+  clk_pin: GPIO19
+  mosi_pin: GPIO18
 
-ota:
-  - platform: esphome
-    password: !secret ota_password
+display:
+  - platform: epaper_spi
+    id: epaper
+    model: weact-2.13in-3c
+    cs_pin: GPIO21
+    dc_pin: GPIO1
+    reset_pin: GPIO2
+    busy_pin: GPIO0
+    rotation: 90
+    update_interval: 1s
+    full_update_every: 0
+    lambda: |-
+      auto ok = [](float v, float lo, float hi) { return !isnan(v) && v >= lo && v <= hi; };
+      auto fmta = [](float a, char *buf) {
+        char sign = a >= 0 ? '+' : '-';
+        float abs_a = fabsf(a);
+        if (abs_a >= 99.95f) snprintf(buf, 8, "%c%4d", sign, (int)abs_a);
+        else if (abs_a < 0.995f) snprintf(buf, 8, "%c.%02d", sign, (int)roundf(abs_a * 100.0f));
+        else snprintf(buf, 8, "%c%4.1f", sign, abs_a);
+      };
+      it.fill(id(color_white));
+      int w = it.get_width(), h = it.get_height();
+      int rh = 20;
+
+      int x1, y1, cw, ch;
+      it.get_text_bounds(0, 0, "X", id(epaper_font_beer), TextAlign::TOP_LEFT, &x1, &y1, &cw, &ch);
+      static int frame = 0;
+      frame++;
+      int marquee = frame % 4;
+
+      // Red marquee stripe (top)
+      it.filled_rectangle(0, 0, w, rh, id(color_red));
+      int sx = (w - 20 * cw) / 2, cy = rh / 2, ty = cy - ch / 2;
+      const char *words[] = {"COLDEST", "BEER", "IN", "TOWN"};
+      const int starts[] = {0, 8, 13, 16}, lens[] = {7, 4, 2, 4};
+      for (int i = 0; i < 4; i++) {
+        int wx = sx + starts[i] * cw;
+        it.printf(wx, cy, id(epaper_font_beer), id(color_white), TextAlign::CENTER_LEFT, words[i]);
+        if (i != marquee)
+          for (int py = ty; py < ty + ch; py++)
+            for (int px = wx; px < wx + lens[i] * cw; px++)
+              if ((px + py) % 2 == 0)
+                it.draw_pixel_at(px, py, id(color_red));
+      }
+
+      // Data rows (4 evenly spaced below marquee)
+      int row_h = (h - rh) / 4;
+      int r1 = rh + (row_h - ch) / 2;
+      int r2 = rh + row_h + (row_h - ch) / 2;
+      int r3 = rh + 2 * row_h + (row_h - ch) / 2;
+      int r4 = rh + 3 * row_h + (row_h - ch) / 2;
+
+      float v1 = id(sens_batt_voltage).state, a1 = id(sens_batt_current).state, s1 = id(sens_batt_soc).state;
+      float v2 = id(sens_batt2_voltage).state, a2 = id(sens_batt2_current).state, s2 = id(sens_batt2_soc).state;
+      float ft = id(sens_fridge_temp).state;
+      char ca[8];
+
+      // Batt1
+      it.print(5, r1, id(epaper_font), id(color_black), "Batt1:");
+      if (ok(v1, 0, 60) && ok(a1, -200, 200) && ok(s1, 0, 100)) {
+        fmta(a1, ca);
+        it.printf(w - 5, r1, id(epaper_font), id(color_black), TextAlign::TOP_RIGHT, "%4d%% %5.1fv %sa", (int)s1, v1, ca);
+      }
+
+      // Batt2
+      it.print(5, r2, id(epaper_font), id(color_black), "Batt2:");
+      if (ok(v2, 0, 60) && ok(a2, -200, 200) && ok(s2, 0, 100)) {
+        fmta(a2, ca);
+        it.printf(w - 5, r2, id(epaper_font), id(color_black), TextAlign::TOP_RIGHT, "%4d%% %5.1fv %sa", (int)s2, v2, ca);
+      }
+
+      // Zigbee status line — find coordinator (0x0000) in neighbor table
+      it.print(5, r3, id(epaper_font), id(color_black), "Zigbee:");
+      esp_zb_nwk_info_iterator_t zit = 0;
+      esp_zb_nwk_neighbor_info_t nbr;
+      bool zb_found = false;
+      while (esp_zb_nwk_get_next_neighbor(&zit, &nbr) == ESP_OK) {
+        if (nbr.short_addr == 0x0000) { zb_found = true; break; }
+      }
+      if (zb_found) {
+        char zs[16];
+        snprintf(zs, sizeof(zs), "%d dBm", nbr.rssi);
+        it.print(w - 5, r3, id(epaper_font), id(color_black), TextAlign::TOP_RIGHT, zs);
+      }
+
+      // Fridge (large temp centered on row)
+      it.print(5, r4, id(epaper_font), id(color_black), "Fridge:");
+      if (ok(ft, -40, 80))
+        it.printf(w - 5, rh + 3 * row_h + row_h / 2, id(epaper_font_large), id(color_black), TextAlign::CENTER_RIGHT, "%.1f\xc2\xb0", ft);
+
+interval:
+  - interval: 1min
+    then:
+      - lambda: |-
+          if (id(full_update_minutes) > 0 && ++id(minutes_counter) >= id(full_update_minutes)) {
+            id(minutes_counter) = 0;
+            id(epaper).force_full_update();
+          }
+
+color:
+  - id: color_black
+    red: 0%
+    green: 0%
+    blue: 0%
+  - id: color_white
+    red: 100%
+    green: 100%
+    blue: 100%
+  - id: color_red
+    red: 100%
+    green: 0%
+    blue: 0%
+
+font:
+  - file: &atkinson
+      type: gfonts
+      family: "Atkinson Hyperlegible Mono"
+      weight: 700
+    id: epaper_font
+    size: 16
+    glyphs: " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_abcdefghijklmnopqrstuvwxyz{|}~\u00B0"
+  - file: *atkinson
+    id: epaper_font_large
+    size: 32
+    glyphs: " -.0123456789\u00B0"
+  - file: *atkinson
+    id: epaper_font_beer
+    size: 16
+    glyphs: " !*./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 # --- BLE tracker + client ---
 esp32_ble_tracker:
   scan_parameters:
     active: false
+    interval: 400ms
+    window: 100ms
+    duration: 5min
 
 ble_client:
   - mac_address: !secret bms1_mac_address
     id: ble_bms
+  - mac_address: !secret bms2_mac_address
+    id: ble_bms2
   - mac_address: !secret fridge_mac_address
     id: ble_fridge
 
-# --- BLE server (GATT for phone PWA) ---
-esp32_ble_server:
-  manufacturer: "Camp Hub"
-  model: "ESP32-C6"
-  services:
-    # Battery service
-    - uuid: "c4400000-ca6d-4860-ab60-e3a84b000000"
-      advertise: true
-      characteristics:
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000001"
-          id: ble_batt_soc
-          value:
-            data: "0"
-            type: float
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000002"
-          id: ble_batt_voltage
-          value:
-            data: "0"
-            type: float
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000003"
-          id: ble_batt_current
-          value:
-            data: "0"
-            type: float
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000004"
-          id: ble_batt_power
-          value:
-            data: "0"
-            type: float
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000005"
-          id: ble_batt_temp1
-          value:
-            data: "0"
-            type: float
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000006"
-          id: ble_batt_temp2
-          value:
-            data: "0"
-            type: float
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000007"
-          id: ble_batt_charging
-          value:
-            data: "0"
-            type: uint8_t
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000008"
-          id: ble_batt_discharging
-          value:
-            data: "0"
-            type: uint8_t
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000009"
-          id: ble_batt_online
-          value:
-            data: "0"
-            type: uint8_t
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b00000a"
-          id: ble_bms_enable_charging
-          value:
-            data: "0"
-            type: uint8_t
-          read: true
-          write: true
-          notify: true
-          on_write:
-            then:
-              - lambda: |-
-                  if (x.size() > 0) {
-                    if (x[0]) {
-                      id(sw_bms_charging).turn_on();
-                    } else {
-                      id(sw_bms_charging).turn_off();
-                    }
-                  }
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b00000b"
-          id: ble_bms_enable_discharging
-          value:
-            data: "0"
-            type: uint8_t
-          read: true
-          write: true
-          notify: true
-          on_write:
-            then:
-              - lambda: |-
-                  if (x.size() > 0) {
-                    if (x[0]) {
-                      id(sw_bms_discharging).turn_on();
-                    } else {
-                      id(sw_bms_discharging).turn_off();
-                    }
-                  }
-
-    # Fridge service
-    - uuid: "c4400100-ca6d-4860-ab60-e3a84b000000"
-      characteristics:
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000101"
-          id: ble_fridge_temp
-          value:
-            data: "0"
-            type: float
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000102"
-          id: ble_fridge_target
-          value:
-            data: "0"
-            type: float
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000103"
-          id: ble_fridge_powered_on
-          value:
-            data: "0"
-            type: uint8_t
-          read: true
-          notify: true
-        - uuid: "c4400000-ca6d-4860-ab60-e3a84b000104"
-          id: ble_fridge_power
-          value:
-            data: "0"
-            type: uint8_t
-          read: true
-          write: true
-          notify: true
-          on_write:
-            then:
-              - lambda: |-
-                  if (x.size() > 0) {
-                    if (x[0]) {
-                      id(sw_fridge_power).turn_on();
-                    } else {
-                      id(sw_fridge_power).turn_off();
-                    }
-                  }
-
 # --- External components ---
 external_components:
+  - source:
+      type: local
+      path: components
+    components: [epaper_spi, zigbee]
   - source: github://syssi/esphome-jk-bms@main
     refresh: 0s
   - source: github://neftaly/esphome-alpicool@main
@@ -228,8 +215,12 @@ external_components:
 jk_bms_ble:
   - ble_client_id: ble_bms
     protocol_version: JK02_32S
-    throttle: 5s
+    throttle: 10s
     id: bms
+  - ble_client_id: ble_bms2
+    protocol_version: JK02_32S
+    throttle: 10s
+    id: bms2
 
 alpicool_ble:
   - ble_client_id: ble_fridge
@@ -243,182 +234,122 @@ sensor:
     state_of_charge:
       name: "${bms_name} SOC"
       id: sens_batt_soc
-      device_id: battery
     total_voltage:
       name: "${bms_name} Voltage"
       id: sens_batt_voltage
-      device_id: battery
     current:
       name: "${bms_name} Current"
       id: sens_batt_current
-      device_id: battery
-    power:
-      name: "${bms_name} Power"
-      id: sens_batt_power
-      device_id: battery
-    min_cell_voltage:
-      name: "${bms_name} Min Cell V"
-      device_id: battery
-    max_cell_voltage:
-      name: "${bms_name} Max Cell V"
-      device_id: battery
-    delta_cell_voltage:
-      name: "${bms_name} Delta Cell V"
-      device_id: battery
     temperature_sensor_1:
-      name: "${bms_name} Temp 1"
-      id: sens_batt_temp1
-      device_id: battery
-    temperature_sensor_2:
-      name: "${bms_name} Temp 2"
-      id: sens_batt_temp2
-      device_id: battery
-    power_tube_temperature:
-      name: "${bms_name} MOSFET Temp"
-      device_id: battery
-    capacity_remaining:
-      name: "${bms_name} Capacity Remaining"
-      device_id: battery
-    charging_cycles:
-      name: "${bms_name} Cycles"
-      device_id: battery
+      name: "${bms_name} Temp"
+
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms2
+    state_of_charge:
+      name: "${bms2_name} SOC"
+      id: sens_batt2_soc
+    total_voltage:
+      name: "${bms2_name} Voltage"
+      id: sens_batt2_voltage
+    current:
+      name: "${bms2_name} Current"
+      id: sens_batt2_current
+    temperature_sensor_1:
+      name: "${bms2_name} Temp"
+
+  - platform: ble_client
+    type: rssi
+    ble_client_id: ble_bms
+    name: "${bms_name} RSSI"
+    id: sens_batt_rssi
+    update_interval: 10s
+    filters:
+      - exponential_moving_average:
+          alpha: 0.3
+          send_every: 1
+  - platform: ble_client
+    type: rssi
+    ble_client_id: ble_bms2
+    name: "${bms2_name} RSSI"
+    id: sens_batt2_rssi
+    update_interval: 10s
+    filters:
+      - exponential_moving_average:
+          alpha: 0.3
+          send_every: 1
+  - platform: ble_client
+    type: rssi
+    ble_client_id: ble_fridge
+    name: "Fridge RSSI"
+    id: sens_fridge_rssi
+    update_interval: 10s
+    filters:
+      - exponential_moving_average:
+          alpha: 0.3
+          send_every: 1
 
   - platform: alpicool_ble
     alpicool_ble_id: fridge_ble
     current_temperature:
       name: "Fridge Temperature"
       id: sens_fridge_temp
-      device_id: fridge
-    target_temperature:
-      name: "Fridge Target"
-      id: sens_fridge_target
-      device_id: fridge
-    battery_percent:
-      name: "Fridge Battery"
-      device_id: fridge
     battery_voltage:
-      name: "Fridge Battery Voltage"
-      device_id: fridge
-
-  - platform: wifi_signal
-    name: "WiFi Signal"
-    update_interval: 60s
+      name: "Fridge Voltage"
+      accuracy_decimals: 1
 
 binary_sensor:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms
-    charging:
-      name: "${bms_name} Charging"
-      id: sens_batt_charging
-      device_id: battery
-    discharging:
-      name: "${bms_name} Discharging"
-      id: sens_batt_discharging
-      device_id: battery
-    balancing:
-      name: "${bms_name} Balancing"
-      device_id: battery
     online_status:
       name: "${bms_name} Online"
-      id: sens_batt_online
-      device_id: battery
 
-  - platform: alpicool_ble
-    alpicool_ble_id: fridge_ble
-    powered_on:
-      name: "Fridge Powered On"
-      id: sens_fridge_powered_on
-      device_id: fridge
-    controls_locked:
-      name: "Fridge Controls Locked"
-      device_id: fridge
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms2
+    online_status:
+      name: "${bms2_name} Online"
+
 
 climate:
   - platform: alpicool_ble
     alpicool_ble_id: fridge_ble
     name: "Fridge"
-    device_id: fridge
 
 select:
   - platform: alpicool_ble
     alpicool_ble_id: fridge_ble
     run_mode:
       name: "Fridge Run Mode"
-      device_id: fridge
     battery_saver:
       name: "Fridge Battery Protection"
-      device_id: fridge
 
 switch:
-  - platform: jk_bms_ble
-    jk_bms_ble_id: bms
-    charging:
-      name: "${bms_name} Enable Charging"
-      id: sw_bms_charging
-      device_id: battery
-    discharging:
-      name: "${bms_name} Enable Discharging"
-      id: sw_bms_discharging
-      device_id: battery
-    balancer:
-      name: "${bms_name} Enable Balancer"
-      device_id: battery
-
   - platform: alpicool_ble
     alpicool_ble_id: fridge_ble
     power:
       name: "Fridge Power"
-      id: sw_fridge_power
-      device_id: fridge
     controls_lock:
       name: "Fridge Controls Lock"
-      device_id: fridge
+
+number:
+  - platform: template
+    name: "Display Full Update"
+    min_value: 0
+    max_value: 1440
+    step: 1
+    unit_of_measurement: "min"
+    lambda: return id(full_update_minutes);
+    set_action:
+      - globals.set:
+          id: full_update_minutes
+          value: !lambda 'return (int)x;'
 
 text_sensor:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms
     errors:
       name: "${bms_name} Errors"
-      device_id: battery
 
-# --- BLE GATT notify interval ---
-interval:
-  - interval: 5s
-    then:
-      - lambda: |-
-          // Battery sensors
-          if (id(sens_batt_soc).has_state())
-            id(ble_batt_soc).set_value(id(sens_batt_soc).state);
-          if (id(sens_batt_voltage).has_state())
-            id(ble_batt_voltage).set_value(id(sens_batt_voltage).state);
-          if (id(sens_batt_current).has_state())
-            id(ble_batt_current).set_value(id(sens_batt_current).state);
-          if (id(sens_batt_power).has_state())
-            id(ble_batt_power).set_value(id(sens_batt_power).state);
-          if (id(sens_batt_temp1).has_state())
-            id(ble_batt_temp1).set_value(id(sens_batt_temp1).state);
-          if (id(sens_batt_temp2).has_state())
-            id(ble_batt_temp2).set_value(id(sens_batt_temp2).state);
-
-          // Battery binary sensors
-          if (id(sens_batt_charging).has_state())
-            id(ble_batt_charging).set_value({(uint8_t)(id(sens_batt_charging).state ? 1 : 0)});
-          if (id(sens_batt_discharging).has_state())
-            id(ble_batt_discharging).set_value({(uint8_t)(id(sens_batt_discharging).state ? 1 : 0)});
-          if (id(sens_batt_online).has_state())
-            id(ble_batt_online).set_value({(uint8_t)(id(sens_batt_online).state ? 1 : 0)});
-
-          // BMS switch states
-          id(ble_bms_enable_charging).set_value({(uint8_t)(id(sw_bms_charging).state ? 1 : 0)});
-          id(ble_bms_enable_discharging).set_value({(uint8_t)(id(sw_bms_discharging).state ? 1 : 0)});
-
-          // Fridge sensors
-          if (id(sens_fridge_temp).has_state())
-            id(ble_fridge_temp).set_value(id(sens_fridge_temp).state);
-          if (id(sens_fridge_target).has_state())
-            id(ble_fridge_target).set_value(id(sens_fridge_target).state);
-
-          // Fridge binary/switch
-          if (id(sens_fridge_powered_on).has_state())
-            id(ble_fridge_powered_on).set_value({(uint8_t)(id(sens_fridge_powered_on).state ? 1 : 0)});
-          id(ble_fridge_power).set_value({(uint8_t)(id(sw_fridge_power).state ? 1 : 0)});
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms2
+    errors:
+      name: "${bms2_name} Errors"

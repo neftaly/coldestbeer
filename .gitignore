@@ -4,3 +4,4 @@
 /.esphome/
 /secrets.yaml
 node_modules/
+__pycache__/
